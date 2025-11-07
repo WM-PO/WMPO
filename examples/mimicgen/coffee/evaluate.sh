@@ -28,7 +28,7 @@ cp ./checkpoint_files/processing_prismatic.py "$TARGET_MODEL_PATH/"
 CKPT_PATH="./checkpoint_files"
 VLA_NAME="openvla-oft"
 # Evaluate with 4*8 GPUs as default
-NUM_NODES=1
+NUM_NODES=4
 NUM_GPUS=8
 ALIGN_PATH="./align.json"
 

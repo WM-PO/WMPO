@@ -28,7 +28,7 @@ cp ./checkpoint_files/processing_prismatic.py "$SFT_MODEL_PATH/"
 CKPT_PATH="./checkpoint_files"
 VLA_NAME="openvla-oft"
 # If you want to use 2*8 GPU to RL. Set NUM_NODES=2
-NUM_NODES=1
+NUM_NODES=4
 NUM_GPUS=8
 ALIGN_PATH="./align.json"
 
