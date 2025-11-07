@@ -35,6 +35,7 @@
 
 
 
+
 ![Introduction](./assets/introduction.png)
 
 
@@ -144,9 +145,7 @@ After setting up the clusters, simply start the task on the head node!
 
 ### Evaluating WMPO
 
-Use `bash examples/mimicgen/{Task Name}/evaluate.sh` to evaluate the pre-trained models. **Set `NUM_NODES=4` and `NUM_GPUS=8` to evaluate with default multiple nodes settings for reproducibility.** 
-
-You can adjust `TARGET_MODEL_PATH` to evaluate the checkpoint you want.
+Use `bash examples/mimicgen/{Task Name}/evaluate.sh` to evaluate the pre-trained models. Follow the default training settings for reproducibility. You can also adjust `TARGET_MODEL_PATH` to evaluate the checkpoint you want.
 
 ### Result - WMPO outperforms DPO and GRPO
 
@@ -167,6 +166,8 @@ You can adjust `TARGET_MODEL_PATH` to evaluate the checkpoint you want.
 ## 🙏 Acknowledgement
 
 We thank the following great open-sourced project which our codebase relies on: [Open-Sora](https://github.com/hpcaitech/Open-Sora), [openvla-oft](https://github.com/moojink/openvla-oft), [VideoMAE](https://github.com/MCG-NJU/VideoMAE), [verl](https://github.com/volcengine/verl), [mimicgen](https://github.com/NVlabs/mimicgen), [SimpleVLA-RL](https://github.com/PRIME-RL/SimpleVLA-RL).
+
+We would like to express our sincere gratitude to [Yikun Miao](https://scholar.google.com/citations?user=qyHfMJAAAAAJ&hl=en) for his valuable assistance in preparing the open-source release.
 
 ## 🎓 Citation
 
