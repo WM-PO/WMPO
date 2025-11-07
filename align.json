@@ -1,0 +1,17 @@
+{
+  "env_vars": {
+    "NCCL_DEBUG": "WARN",
+    "MUJOCO_GL": "osmesa", 
+    "RAY_memory_monitor_refresh_ms": "0",
+    "VLLM_ATTENTION_BACKEND": "XFORMERS",
+    "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+    "TOKENIZERS_PARALLELISM": "true",
+    "WANDB_API_KEY": "",
+    "RAY_DEBUG": "0",
+    "RAY_DEBUG_POST_MORTEM": "0",
+    "VERL_PPO_LOGGING_LEVEL": "DEBUG"
+  },
+  "excludes": [
+    "*"
+  ]
+}

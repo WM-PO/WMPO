@@ -1,0 +1,11 @@
+/checkpoint_files
+/data_files
+/tmp_files
+/outputs
+/wandb
+__pycache__
+
+/dependencies/*
+
+!/dependencies/openvla-oft/
+!/dependencies/opensora/
