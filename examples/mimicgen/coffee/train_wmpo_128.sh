@@ -29,7 +29,8 @@ CKPT_PATH="./checkpoint_files"
 VLA_NAME="openvla-oft"
 # If you want to use 2*8 GPU to RL. Set NUM_NODES=2
 NUM_NODES=4
-NUM_GPUS=8
+NUM_GPUS_PER_NODE=8
+NUM_GPUS=$((NUM_NODES * NUM_GPUS_PER_NODE))
 ALIGN_PATH="./align.json"
 
 
@@ -102,7 +103,7 @@ HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     trainer.project_name=$PROJECT_NAME \
     trainer.experiment_name=$EXPERIMENT_NAME \
     trainer.default_local_dir=$CKPT_PATH/$PROJECT_NAME/$EXPERIMENT_NAME \
-    trainer.n_gpus_per_node=$NUM_GPUS \
+    trainer.n_gpus_per_node=$NUM_GPUS_PER_NODE \
     trainer.nnodes=$NUM_NODES \
     trainer.save_freq=1 \
     trainer.test_freq=1 \

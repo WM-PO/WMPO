@@ -2,7 +2,7 @@ set -x
 
 export NCCL_DEBUG=WARN 
 export TF_CPP_MIN_LOG_LEVEL=3
-export WANDB_API_KEY='' #TODO: use your own WANDB_API_KEY
+export WANDB_API_KEY='1ffba3f6afe0d59ce6267833cd36a695f3719b25' #TODO: use your own WANDB_API_KEY
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=true
 export CUDA_LAUNCH_BLOCKING=1
@@ -29,7 +29,8 @@ CKPT_PATH="./checkpoint_files"
 VLA_NAME="openvla-oft"
 # If you want to use 2*8 GPU to RL. Set NUM_NODES=2
 NUM_NODES=4
-NUM_GPUS=8
+NUM_GPUS_PER_NODE=8
+NUM_GPUS=$((NUM_NODES * NUM_GPUS_PER_NODE))
 ALIGN_PATH="./align.json"
 
 
@@ -56,8 +57,8 @@ HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.ppo_micro_batch_size=$NUM_GPUS \
     actor_rollout_ref.actor.use_dynamic_bsz=False \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
-    actor_rollout_ref.actor.fsdp_config.grad_offload=True \
-    actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
+    actor_rollout_ref.actor.fsdp_config.grad_offload=False \
+    actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
     actor_rollout_ref.actor.grad_clip=1 \
     actor_rollout_ref.actor.clip_ratio_high=0.28 \
     actor_rollout_ref.actor.clip_ratio_low=0.2 \
@@ -102,7 +103,7 @@ HYDRA_FULL_ERROR=1 python -m verl.trainer.main_ppo \
     trainer.project_name=$PROJECT_NAME \
     trainer.experiment_name=$EXPERIMENT_NAME \
     trainer.default_local_dir=$CKPT_PATH/$PROJECT_NAME/$EXPERIMENT_NAME \
-    trainer.n_gpus_per_node=$NUM_GPUS \
+    trainer.n_gpus_per_node=$NUM_GPUS_PER_NODE \
     trainer.nnodes=$NUM_NODES \
     trainer.save_freq=1 \
     trainer.test_freq=1 \
