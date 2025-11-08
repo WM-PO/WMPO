@@ -2,7 +2,7 @@ set -x
 
 export NCCL_DEBUG=WARN 
 export TF_CPP_MIN_LOG_LEVEL=3
-export WANDB_API_KEY='1ffba3f6afe0d59ce6267833cd36a695f3719b25' #TODO: use your own WANDB_API_KEY
+export WANDB_API_KEY='' #TODO: use your own WANDB_API_KEY
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export TOKENIZERS_PARALLELISM=true
 export CUDA_LAUNCH_BLOCKING=1
