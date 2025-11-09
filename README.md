@@ -46,9 +46,9 @@
 
 ### ✅ Todo
 
-- [x] Release the training code and training scripts for WMPO (4 Tasks)
-- [x] Release the checkpoints (VLAs and world models) and training data for WMPO (4 Tasks)
-- [ ] Release the training code for world models
+- [x] Release the training code and training scripts for WMPO
+- [x] Release the checkpoints (VLAs and world models) and training data for WMPO
+- [x] Release the training code, training scripts and training data for world models
 
 
 
@@ -122,9 +122,11 @@ checkpoint_files
 
 ## 🚀 Running the experiments
 
-### Single Node Training
+### WMPO Single Node Training
 
-Use `bash examples/mimicgen/{Task Name}/train_wmpo_{Rollout Budget}.sh` directly to run the experiments, set `NUM_NODES=1` and `NUM_GPUS` to the number of GPUs that you have.  `{Task Name}` can be `coffee`, `square`, `stack_three`, `three_piece_assembly` and `Rollout Budget` can be `128` or `1280`. 
+Use `bash examples/mimicgen/{Task Name}/train_wmpo_{Rollout Budget}.sh` directly to run the experiments, set `NUM_NODES=1` and `NUM_GPUS_PER_NODE` to the number of GPUs that you have.  
+
+`{Task Name}` can be `coffee`, `square`, `stack_three`, `three_piece_assembly` and `Rollout Budget` can be `128` or `1280`. 
 
 Set your `WANDB_API_KEY` in both the config file and `align.json` if you want to use wandb to log the experiments.
 
@@ -135,11 +137,28 @@ Below shows the example paths of config files.
 | coffee               | WMPO with rollout budget `P=128`  | `examples/mimicgen/coffee/train_wmpo_128.sh`                |
 | three_piece_assembly | WMPO with rollout budget `P=1280` | `examples/mimicgen/three_piece_assembly/train_wmpo_1280.sh` |
 
-### Multiple Nodes Training
+### WMPO Multiple Nodes Training
 
-We use `Ray` to manage the clusters. Run `bash launch_head.sh` on the head node and `bash launch_worker.sh` on worker nodes. Set `NUM_NODES` and `NUM_GPUS` to the number of nodes and GPUs you have, and adjust the placeholder IP address in the scripts accordingly.
+We use `Ray` to manage the clusters. Run `bash launch_head.sh` on the head node and `bash launch_worker.sh` on worker nodes. Set `NUM_NODES` and `NUM_GPUS_PER_NODE` to the number of nodes and GPUs you have, and adjust the placeholder IP address in the scripts accordingly.
 
 After setting up the clusters, simply start the task on the head node!
+
+
+
+### Training World Models
+
+We use `OpenSora` framework to train our world models with rollout trajectories. Directly use our training scripts via `bash examples/opensora/{Task Name}_{Rollout Budge}.sh` to train the world model for task `{Task Name}` with rollout budget `{Rollout Budge}`. 
+
+Set `GPUS_PER_NODE` and `NNODES` to the number of GPUs and nodes you have. Set `MASTER_ADDR` to the address and port of your master node, and `node_rank` to the distinct rank of each node.
+
+`{Task Name}` can be `coffee`, `square`, `stack_three`, `three_piece_assembly` and `Rollout Budget` can be `128` or `1280`. 
+
+Below shows the example paths of config files.
+
+| Task Name            | Settings                | Example Config File Path                         |
+| -------------------- | ----------------------- | ------------------------------------------------ |
+| coffee               | rollout budget `P=128`  | `examples/opensora/coffee_128.sh`                |
+| three_piece_assembly | rollout budget `P=1280` | `examples/opensora/three_piece_assembly_1280.sh` |
 
 ## 📊 Evaluation and Results
 
