@@ -20,8 +20,8 @@
   </p>
 </div>
 <p align="center">
-  <a href="https://arxiv.org/abs/xxxx.xxxxx">
-    <img src="https://img.shields.io/badge/arXiv-xxxx.xxxxx-b31b1b.svg" alt="arXiv">
+  <a href="https://arxiv.org/abs/2511.09515">
+    <img src="https://img.shields.io/badge/arXiv-2511.09515-b31b1b.svg" alt="arXiv">
   </a>
   <a href="https://WM-PO.github.io">
     <img src="https://img.shields.io/badge/Project%20Page-Website-1f6feb.svg?logo=googlechrome&logoColor=white" alt="Project Page">
@@ -44,7 +44,7 @@
 
 - **[2025-11]** We release the training code, data and checkpoints for WMPO. Check it out!
 
-### ✅ Todo
+### ✅ Milestones
 
 - [x] Release the training code and training scripts for WMPO
 - [x] Release the checkpoints (VLAs and world models) and training data for WMPO
@@ -120,6 +120,10 @@ checkpoint_files
 
 `world_models` are first fine-tuned from `OpenSora-STDiT-v3` checkpoint into `OpenX_pretrained` checkpoint on the Open X-Embodiment (OXE) dataset, and then trained within the WMPO framework. All world models share the same variational auto-encoder `vae`.
 
+> [!Note]
+> 
+> We would like to kindly remind you that the complete checkpoint files and datasets are relatively large (364GiB + 530GiB). You can adjust the directories in `download_hf.py` and only download the checkpoints and datasets you need.
+
 ## 🚀 Running the experiments
 
 ### WMPO Single Node Training
@@ -142,8 +146,6 @@ Below shows the example paths of config files.
 We use `Ray` to manage the clusters. Run `bash launch_head.sh` on the head node and `bash launch_worker.sh` on worker nodes. Set `NUM_NODES` and `NUM_GPUS_PER_NODE` to the number of nodes and GPUs you have, and adjust the placeholder IP address in the scripts accordingly.
 
 After setting up the clusters, simply start the task on the head node!
-
-
 
 ### Training World Models
 
