@@ -39,8 +39,8 @@ except Exception:
 # CONFIG
 # =========================
 CFG = dict(
-    TRAIN_PATTERN=".datasets/simplevla_rl/mimicgen/square_1280_demos/square_d0/**/*.tar",
-    VAL_PATTERN="./datasets/simplevla_rl/mimicgen/square_128_demos_val/**/*.tar",
+    TRAIN_PATTERN="/mnt/hdfs/zhufangqi/datasets/simplevla_rl/mimicgen/square_1280_demos/square_d0/**/*.tar",
+    VAL_PATTERN="/mnt/hdfs/zhufangqi/datasets/simplevla_rl/mimicgen/square_128_demos_val/**/*.tar",
     IMG_SIZE=224,
     WINDOW=8,
     STRIDE_TRAIN=8,

@@ -138,3 +138,41 @@ class RLDSDataset(IterableDataset):
     # === Explicitly Unused ===
     def __getitem__(self, idx: int) -> None:
         raise NotImplementedError("IterableDataset does not implement map-style __getitem__; see __iter__ instead!")
+
+
+
+if __name__ == "__main__":
+    data_mix = "oxe_magic_soup_plus_minus"
+    data_root_dir = "/mnt/hdfs/zhufangqi/datasets/open_x/openvla"
+    default_image_resolution = (3, 256 ,256)
+    shuffle_buffer_size = 256000
+    dataset = RLDSDataset(
+        data_root_dir,
+        data_mix,
+        resize_resolution=default_image_resolution[1:],
+        shuffle_buffer_size=shuffle_buffer_size,
+        train=True,
+        image_aug=False,
+    )
+    per_device_batch_size=8
+    seed=42
+    worker_init_fn = set_global_seed(seed, get_worker_init_fn=True)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=per_device_batch_size,
+        sampler=None,
+        # collate_fn=collator,
+        num_workers=0,
+        worker_init_fn=worker_init_fn,
+    )
+    from tqdm import tqdm
+    for i, batch in enumerate(tqdm(dataloader, total=10000)):
+        # torch.Size([64, 3, 12, 256, 256])
+        print()
+        pass
+        # os.makedirs(f"debug/{i}", exist_ok=True)  # 修正了拼写错误
+        # for j, name in enumerate(batch['dataset_name']):
+        #     imageio.mimwrite(f'debug/{i}/{name}_{j}.mp4', batch['observation']['image_primary'][j], fps=1)
+        # if i >= 10:
+        #     break
+    print()

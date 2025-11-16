@@ -265,7 +265,7 @@ def OpenSoraVAE_V1_2(
 
     vae_2d = dict(
         type="VideoAutoencoderKL",
-        from_pretrained="./pretrained_models/PixArt-alpha/pixart_sigma_sdxlvae_T5_diffusers",
+        from_pretrained="/mnt/hdfs/zhufangqi/pretrained_models/PixArt-alpha/pixart_sigma_sdxlvae_T5_diffusers",
         subfolder="vae",
         micro_batch_size=micro_batch_size,
         local_files_only=local_files_only,

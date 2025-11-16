@@ -14,7 +14,6 @@ VideoMAE success/failure classifier (Distributed with torchrun, supports Focal L
   并仅在 rank0 打印与保存最佳模型。
 """
 
-
 import argparse, glob, io, os, random
 from typing import Iterable, List, Tuple
 from collections import OrderedDict
@@ -54,22 +53,22 @@ class SuccessWindowDataset(IterableDataset):
         stride: int = 8,
         img_size: int = 224,
         mode: str = "train",
+        use_resample: bool = False, 
     ) -> None:
         super().__init__()
         assert mode in {"train", "val"}
         self.window, self.stride, self.mode = window, stride, mode
 
         self.fe = VideoMAEFeatureExtractor(size=img_size)
-
         if self.mode == 'train':
             self.pipeline = wds.DataPipeline(
-                wds.SimpleShardList(shards),
+                wds.SimpleShardList(shards) if not use_resample else wds.ResampledShards(shards, seed=42),
                 wds.split_by_node,   # 按节点切分
                 wds.split_by_worker, # 按 DataLoader worker 切分
                 wds.tarfile_to_samples(handler=wds.warn_and_continue),
                 wds.to_tuple("video.npy", "meta.json"),
                 self._windows,
-                wds.shuffle(1000, initial=1000),
+                wds.shuffle(500, initial=500),
             )
         else:
             self.pipeline = wds.DataPipeline(
@@ -110,7 +109,7 @@ class SuccessWindowDataset(IterableDataset):
                 video = np.load(io.BytesIO(v_bytes))  # (T, H, W, C)
                 meta = json.loads(m_bytes.decode())
                 T = meta["finish_step"]
-                complete = meta["complete"]
+                complete = meta.get("complete", True) # meta["complete"]
                 end = T
                 label = int(complete)
                 debug_meta = {
@@ -141,32 +140,69 @@ class SuccessWindowDataset(IterableDataset):
         frames = [Image.fromarray(f.astype(np.uint8)) for f in clip]
         return self.fe(frames, return_tensors="pt")["pixel_values"][0]
 
+class MixedSuccessWindowDataset(IterableDataset):
+    """Sample from multiple *already‑constructed* datasets with given ratios.
 
-# ----------------------------- Focal Loss ----------------------------- #
-# class FocalLoss(nn.Module):
-#     def __init__(self, alpha: float = 0.25, gamma: float = 2.0, reduction: str = "sum"):
-#         super().__init__()
-#         # 二分类 => 先把 [neg, pos] 存成 buffer，DDP 自动同步
-#         self.alpha = alpha
-#         self.gamma = gamma
-#         self.reduction = reduction
+    This wrapper keeps separate iterators for each underlying dataset and on
+    every `__next__` randomly chooses which iterator to draw from, according to
+    the supplied *weights*.
+    """
 
-#     def forward(self, logits: torch.Tensor, targets: torch.Tensor):
-#         # 交叉熵自带 softmax + log；权重直接传 α 向量就行
-#         alpha = torch.tensor([1 - self.alpha, self.alpha]).to(logits.device)
-#         ce_loss = F.cross_entropy(
-#             logits, targets,
-#             weight=alpha,          # 关键：类别权重
-#             reduction="none"
-#         )
-#         pt = torch.exp(-ce_loss)        # = softmax(logits)[range(N), targets]
-#         loss = (1 - pt) ** self.gamma * ce_loss
+    def __init__(
+        self,
+        shards_pattern1: str,
+        shards_pattern2: str,
+        weights: Tuple[float, float] = (0.7, 0.3),
+        window: int = 8,
+        stride: int = 8,
+        img_size: int = 224,
+        mode: str = "train",
+    ):
+        super().__init__()
+        ds1 = SuccessWindowDataset(shards_pattern1, window=window, stride=stride, img_size=img_size, mode=mode, use_resample = False)
+        ds2 = SuccessWindowDataset(shards_pattern2, window=window, stride=stride, img_size=img_size, mode=mode, use_resample = True)
+        datasets = [ds1, ds2]
 
-#         if self.reduction == "mean":
-#             return loss.mean()
-#         elif self.reduction == "sum":
-#             return loss.sum()
-#         return loss
+        if len(datasets) != len(weights):
+            raise ValueError("`datasets` and `weights` must have the same length")
+        if any(w < 0 for w in weights):
+            raise ValueError("`weights` must be non‑negative")
+
+        total = float(sum(weights))
+        if total == 0:
+            raise ValueError("`weights` must sum to a positive value")
+
+        self.datasets = datasets
+        # normalize so that sum(weights) == 1.0
+        self.weights = [w / total for w in weights]
+
+    # ------------------------------------------------------------------
+    # Internal helper
+    # ------------------------------------------------------------------
+    def _choose_dataset_idx(self) -> int:
+        """Return an index in [0, len(datasets)) sampled wrt `self.weights`."""
+        r = random.random()
+        cum = 0.0
+        for idx, w in enumerate(self.weights):
+            cum += w
+            if r <= cum:
+                return idx
+        return len(self.weights) - 1  # fallback due to FP precision
+
+    # ------------------------------------------------------------------
+    # IterableDataset interface
+    # ------------------------------------------------------------------
+    def __iter__(self):
+        # create one independent iterator per underlying dataset
+        iterators = [iter(ds) for ds in self.datasets]
+        while True:
+            idx = self._choose_dataset_idx()
+            try:
+                yield next(iterators[idx])
+            except StopIteration:
+                iterators[idx] = iter(self.datasets[idx])
+                yield next(iterators[idx])
+
 
 
 
@@ -322,12 +358,12 @@ def train(args):
         raise ValueError("Not enough shards for validation")
 
     val_shards, train_shards = shards[: args.val_shards], shards[args.val_shards :]
-
-    import tarfile
-    for val_shard in val_shards:
-        with tarfile.open(val_shard, "r") as tar:
-            for member in tar.getmembers():
-                print(member.name)
+    val_shards = sorted(glob.glob("/mnt/hdfs/zhufangqi/datasets/simplevla_rl/mimicgen/square_128_demos_val/square_d0/**/*.tar", recursive=True))
+    # import tarfile
+    # for val_shard in val_shards:
+    #     with tarfile.open(val_shard, "r") as tar:
+    #         for member in tar.getmembers():
+    #             print(member.name)
 
     tr_ds = SuccessWindowDataset(
         train_shards, 8, 8, args.img_size, mode="train"
@@ -335,11 +371,16 @@ def train(args):
     # va_ds = SuccessWindowDataset(
     #     val_shards, 8, 8, args.img_size, mode="val"
     # )
+    # print(f"load train shard: {len(train_shards)}")
+    # weights = [0.7, 0.3]
+    # mix_shards = sorted(glob.glob("/mnt/hdfs/zhufangqi/datasets/simplevla_rl/mimicgen/square_128_demos_val/square_d0/**/*.tar", recursive=True))
+    # print(f"load mix shard: {len(mix_shards)}")
+    # tr_ds = MixedSuccessWindowDataset(train_shards, mix_shards, weights, 8, 8, args.img_size, mode="train")
 
     # IterableDataset 无法使用 DistributedSampler，因此直接依赖 webdataset 的 split_by_* 去重，
     # 每个 rank 仍然搭建独立 DataLoader。
     tr_ld = DataLoader(
-        tr_ds,
+        train_shards,
         args.batch_size,
         # collate_fn=lambda b: (
         #     torch.stack([v for v, _ in b]),
@@ -348,16 +389,16 @@ def train(args):
         num_workers=args.num_workers,
         pin_memory=True,
     )
-    # va_ld = DataLoader(
-    #     va_ds,
-    #     args.val_batch_size,
-    #     # collate_fn=lambda b: (
-    #     #     torch.stack([v for v, _ in b]),
-    #     #     torch.tensor([y for _, y in b]),
-    #     # ),
-    #     num_workers=args.num_workers,
-    #     pin_memory=True,
-    # )
+    va_ld = DataLoader(
+        val_shards,
+        args.val_batch_size,
+        # collate_fn=lambda b: (
+        #     torch.stack([v for v, _ in b]),
+        #     torch.tensor([y for _, y in b]),
+        # ),
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
 
     # ---------- Model ---------- #
     cfg = VideoMAEConfig.from_pretrained("MCG-NJU/videomae-base", num_frames=8, num_labels=2)
@@ -439,13 +480,13 @@ def train(args):
 
 def get_args():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pattern", default="/mnt/hdfs/zhufangqi/datasets/simplevla_rl/mimicgen/square_128_demos/**/*.tar", help="glob pattern of WebDataset shards")
+    ap.add_argument("--pattern", default="/mnt/hdfs/zhufangqi/datasets/simplevla_rl/mimicgen/square_1280_demos/square_d0/**/*.tar", help="glob pattern of WebDataset shards")
     ap.add_argument("--img_size", type=int, default=224)
     ap.add_argument("--batch_size", type=int, default=64, help="per‑GPU batch size")
     ap.add_argument("--val_batch_size", type=int, default=512, help="per‑GPU batch size")
     ap.add_argument("--num_workers", type=int, default=4)
     ap.add_argument("--val_shards", type=int, default=0) # 200
-    ap.add_argument("--eval_steps", type=int, default=1000000000000000)
+    ap.add_argument("--eval_steps", type=int, default=1000)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--epochs", type=float, default=100000)
     ap.add_argument("--ckpt_dir", default="ckpts_videomae")
@@ -461,8 +502,9 @@ def get_args():
     )
     return ap.parse_args()
 
+
 if __name__ == "__main__":
     args = get_args()
     train(args)
 
-# torchrun --standalone --nproc_per_node=8 scripts/success_classifier_vit_v1_3.py
+# torchrun --standalone --nproc_per_node=1 opensora/datasets/success_classifier_vit_v1_3.py

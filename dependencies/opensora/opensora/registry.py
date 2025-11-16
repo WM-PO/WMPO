@@ -21,7 +21,8 @@ def build_module(module, builder, **kwargs):
         cfg = deepcopy(module)
         for k, v in kwargs.items():
             cfg[k] = v
-        return builder.build(cfg)
+        module_built = builder.build(cfg)
+        return module_built
     elif isinstance(module, nn.Module):
         return module
     elif module is None:

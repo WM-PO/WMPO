@@ -92,12 +92,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data_path",
-        default="./datasets/simplevla_rl/rollout_base_dir/06/17",
+        default="/mnt/hdfs/zhufangqi/datasets/simplevla_rl/rollout_base_dir/06/17",
         help="递归遍历的 hdf5 根目录"
     )
     parser.add_argument(
         "--output_dir",
-        default="./datasets/simplevla_rl/webdataset_shards/06/17_mp",
+        default="/mnt/hdfs/zhufangqi/datasets/simplevla_rl/webdataset_shards/06/17_mp",
         help="保存 .tar 的目录"
     )
     parser.add_argument(

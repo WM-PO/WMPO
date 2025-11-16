@@ -14,13 +14,10 @@ VideoMAE success/failure classifier (Distributed with torchrun, supports Focal L
   并仅在 rank0 打印与保存最佳模型。
 """
 
-
 import argparse, glob, io, os, random
 from typing import Iterable, List, Tuple
 from collections import OrderedDict
 import json
-import h5py
-import imageio
 import numpy as np
 import torch
 import torch.nn as nn
@@ -85,55 +82,23 @@ class SuccessWindowDataset(IterableDataset):
         return iter(self.pipeline)
 
     def _windows(self, stream: Iterable[Tuple[bytes, bytes]]):
-        if self.mode == 'val':
-            W, S = self.window, self.stride
-            for v_bytes, m_bytes in stream:
-                video = np.load(io.BytesIO(v_bytes))  # (T, H, W, C)
-                meta = json.loads(m_bytes.decode())
-                T = meta["finish_step"]
-                complete = meta["complete"]
-                for end in range(T, W - 1, -S):
-                    label = end == T and complete
-                    label = int(label)
-                    debug_meta = {
-                            "fpath": meta.get("fpath", ""),
-                            "episode_name": meta.get("episode_name", ""),
-                            "video_start": end-W,
-                            "video_end": end,
-                            "label": label,
-                            "complete": complete
-                        }
-                    yield self._to_tensor(video[end - W : end]), label, debug_meta
-        else:
-            W, S = self.window, self.stride
-            for v_bytes, m_bytes in stream:
-                video = np.load(io.BytesIO(v_bytes))  # (T, H, W, C)
-                meta = json.loads(m_bytes.decode())
-                T = meta["finish_step"]
-                complete = meta["complete"]
-                end = T
-                label = int(complete)
+        W, S = self.window, self.stride
+        for v_bytes, m_bytes in stream:
+            video = np.load(io.BytesIO(v_bytes))  # (T, H, W, C)
+            meta = json.loads(m_bytes.decode())
+            T = meta["finish_step"]
+            complete = meta["complete"]
+            for end in range(T, W - 1, -S):
+                label = end == T and complete
+                label = int(label)
                 debug_meta = {
-                            "fpath": meta.get("fpath", ""),
-                            "episode_name": meta.get("episode_name", ""),
-                            "video_start": end-W,
-                            "video_end": end,
-                            "label": label,
-                            "complete": complete
-                        }
-                yield self._to_tensor(video[end - W : end]), label, debug_meta
-
-                end = random.choice(list(range(T - S, W - 1, -S)))
-                label = 0
-                debug_meta = {
-                    "fpath": meta.get("fpath", ""),
-                    "episode_name": meta.get("episode_name", ""),
-                    "video_start": end-W,
-                    "video_end": end,
-                    "label": label,
-                    "complete": complete
-                }
-                    
+                        "fpath": meta.get("fpath", ""),
+                        "episode_name": meta.get("episode_name", ""),
+                        "video_start": end-W,
+                        "video_end": end,
+                        "label": label,
+                        "complete": complete
+                    }
                 yield self._to_tensor(video[end - W : end]), label, debug_meta
 
 
@@ -143,39 +108,47 @@ class SuccessWindowDataset(IterableDataset):
 
 
 # ----------------------------- Focal Loss ----------------------------- #
-# class FocalLoss(nn.Module):
-#     def __init__(self, alpha: float = 0.25, gamma: float = 2.0, reduction: str = "sum"):
-#         super().__init__()
-#         # 二分类 => 先把 [neg, pos] 存成 buffer，DDP 自动同步
-#         self.alpha = alpha
-#         self.gamma = gamma
-#         self.reduction = reduction
+class FocalLoss(nn.Module):
+    def __init__(self, alpha: float = 0.25, gamma: float = 2.0, reduction: str = "sum"):
+        super().__init__()
+        # 二分类 => 先把 [neg, pos] 存成 buffer，DDP 自动同步
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
 
-#     def forward(self, logits: torch.Tensor, targets: torch.Tensor):
-#         # 交叉熵自带 softmax + log；权重直接传 α 向量就行
-#         alpha = torch.tensor([1 - self.alpha, self.alpha]).to(logits.device)
-#         ce_loss = F.cross_entropy(
-#             logits, targets,
-#             weight=alpha,          # 关键：类别权重
-#             reduction="none"
-#         )
-#         pt = torch.exp(-ce_loss)        # = softmax(logits)[range(N), targets]
-#         loss = (1 - pt) ** self.gamma * ce_loss
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor):
+        # 交叉熵自带 softmax + log；权重直接传 α 向量就行
+        alpha = torch.tensor([1 - self.alpha, self.alpha]).to(logits.device)
+        ce_loss = F.cross_entropy(
+            logits, targets,
+            weight=alpha,          # 关键：类别权重
+            reduction="none"
+        )
+        pt = torch.exp(-ce_loss)        # = softmax(logits)[range(N), targets]
+        loss = (1 - pt) ** self.gamma * ce_loss
 
-#         if self.reduction == "mean":
-#             return loss.mean()
-#         elif self.reduction == "sum":
-#             return loss.sum()
-#         return loss
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        return loss
 
 
 
-# ----------------------------- Evaluation (DDP) ----------------------------- #
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from collections import OrderedDict
+import torch.distributed as dist
+from tqdm import tqdm
+import numpy as np
+
 @torch.no_grad()
 def evaluate_ddp(model: nn.Module, loader: DataLoader, device: torch.device, rank: int, world_size: int):
     """各 rank 本地推断后 all_gather 收集到 rank0 计算指标（支持多阈值）"""
     model.eval()
-    logits_local, trues_local, metas_local = [], [], []
+    logits_local, trues_local = [], []
 
     for vids, ys, meta in tqdm(loader, desc="Processing batches", leave=False):
         vids = vids.to(device, non_blocking=True)
@@ -183,30 +156,22 @@ def evaluate_ddp(model: nn.Module, loader: DataLoader, device: torch.device, ran
         logits = model(pixel_values=vids).logits
         logits_local.extend(logits.squeeze(1).cpu().tolist())  # 假设是二分类且 logits 是 (B, 1)
         trues_local.extend(ys.cpu().tolist())
-        # videos_local.extend(video)
-        for i in range(len(ys)):
-            metas_local.append({k: v[i] for k, v in meta.items()})
+
     # 使用 all_gather_object 收集不同长度 list
     logits_gather, trues_gather = [None] * world_size, [None] * world_size
-    metas_gather = [None] * world_size
     dist.all_gather_object(logits_gather, logits_local)
     dist.all_gather_object(trues_gather, trues_local)
-    dist.all_gather_object(metas_gather, metas_local)
-    all_metas = []
-    for local_meta in metas_gather:
-        all_metas.extend(local_meta)
     torch.cuda.empty_cache()
 
     if rank == 0:
         logits = [logit for sub in logits_gather for logit in sub]
         trues = [t for sub in trues_gather for t in sub]
 
-        thresholds = np.linspace(0.3, 1.0, 20)
+        thresholds = np.linspace(0.5, 0.99, 5)
         all_metrics = {}
 
         probs = torch.sigmoid(torch.tensor(logits)).numpy()
-        best_f1 = 0
-        best_thresh = thresholds[0]
+
         for thresh in thresholds:
             preds = [1 if p[1] >= thresh else 0 for p in probs]
             TP = sum((p == 1 and t == 1) for p, t in zip(preds, trues))
@@ -221,9 +186,6 @@ def evaluate_ddp(model: nn.Module, loader: DataLoader, device: torch.device, ran
             prec = precision_score(trues, preds, zero_division=0)
             rec = recall_score(trues, preds, zero_division=0)
             f1 = f1_score(trues, preds, zero_division=0)
-            if f1 > best_f1:
-                best_f1 = f1
-                best_thresh = thresh
 
             metrics = OrderedDict([
                 ("acc",        acc),
@@ -241,49 +203,72 @@ def evaluate_ddp(model: nn.Module, loader: DataLoader, device: torch.device, ran
             ])
             all_metrics[f"thresh_{thresh:.2f}"] = metrics
 
-        preds = [1 if p[1] >= best_thresh else 0 for p in probs]
-
-        FP_idxs =  [i for i, (p, t) in enumerate(zip(preds, trues)) if (p == 1 and t == 0) ]
-        FN_idxs =  [i for i, (p, t) in enumerate(zip(preds, trues)) if (p == 0 and t == 1) ]
-        key = f'thresh_{best_thresh:.2f}'
-        f1 = all_metrics[key]['f1']
-        prec = all_metrics[key]['precision']
-        recall = all_metrics[key]['recall']
-        acc = all_metrics[key]['acc']
-        FP_dir = f'./debug/thre_{best_thresh:.2f}_f1_{f1:.2f}_acc_{acc:.2f}_prec_{prec:.2f}_recall_{recall:.2f}/FP'
-        FN_dir = f'./debug/thre_{best_thresh:.2f}_f1_{f1:.2f}_acc_{acc:.2f}_prec_{prec:.2f}_recall_{recall:.2f}/FN'
-        os.makedirs(FP_dir, exist_ok=True)
-        os.makedirs(FN_dir, exist_ok=True)
-        for i in FP_idxs:
-            meta = all_metas[i]
-            with h5py.File(meta['fpath'], 'r') as f:
-                # 查看文件中所有的主键（相当于最外层的组/数据集名）
-                base_name = os.path.basename(meta['fpath'])
-                task_id = base_name.split("_")[1]
-                trial_id = base_name.split("_")[3]
-                start = meta['video_start'].item()
-                end = meta['video_end'].item()
-                video = f['video'][start:end]
-                suffix = 'succ' if meta['complete'] else 'fail'
-                video_path = os.path.join(FP_dir, f"task_id_{task_id}_trial_id_{trial_id}_{start}_{end}_{suffix}.mp4")
-                imageio.mimwrite(video_path, video, fps=1)
-        for i in FN_idxs:
-            meta = all_metas[i]
-            with h5py.File(meta['fpath'], 'r') as f:
-                # 查看文件中所有的主键（相当于最外层的组/数据集名）
-                base_name = os.path.basename(meta['fpath'])
-                task_id = base_name.split("_")[1]
-                trial_id = base_name.split("_")[3]
-                start = meta['video_start'].item()
-                end = meta['video_end'].item()
-                video = f['video'][start:end]
-                suffix = 'succ' if meta['complete'] else 'fail'
-                video_path = os.path.join(FN_dir, f"task_id_{task_id}_trial_id_{trial_id}_{start}_{end}_{suffix}.mp4")
-                imageio.mimwrite(video_path, video, fps=1)
-
         return all_metrics
     else:
         return None
+
+
+# ----------------------------- Evaluation (DDP) ----------------------------- #
+# @torch.no_grad()
+# def evaluate_ddp(model: nn.Module, loader: DataLoader, device: torch.device, rank: int, world_size: int):
+#     """各 rank 本地推断后 all_gather 收集到 rank0 计算指标。"""
+#     model.eval()
+#     preds_local, trues_local = [], []
+#     # with open("./debug.log", "a") as log_file:
+#     for vids, ys, meta in tqdm(loader, desc="Processing batches", leave=False):
+#         # for i in range(vids.shape[0]):
+#         #     info = {
+#         #         "fpath":        meta["fpath"][i],
+#         #         "episode_name": meta["episode_name"][i],
+#         #         "video_start":  int(meta["video_start"][i]),
+#         #         "video_end":    int(meta["video_end"][i]),
+#         #         "label":        int(ys[i]),
+#         #     }
+#         #     log_file.write(f"{info}\n")
+#         vids = vids.to(device, non_blocking=True)
+#         ys = ys.to(device, non_blocking=True)
+#         logits = model(pixel_values=vids).logits
+#         preds_local.extend(logits.argmax(1).cpu().tolist())
+#         trues_local.extend(ys.cpu().tolist())
+
+#     # 使用 all_gather_object 收集不同长度 list
+#     preds_gather, trues_gather = [None] * world_size, [None] * world_size
+#     dist.all_gather_object(preds_gather, preds_local)
+#     dist.all_gather_object(trues_gather, trues_local)
+#     torch.cuda.empty_cache()
+#     if rank == 0:
+#         preds = [p for sub in preds_gather for p in sub]
+#         trues = [t for sub in trues_gather for t in sub]
+#         TP = sum((p == 1 and t == 1) for p, t in zip(preds, trues))
+#         TN = sum((p == 0 and t == 0) for p, t in zip(preds, trues))
+#         FP = sum((p == 1 and t == 0) for p, t in zip(preds, trues))
+#         FN = sum((p == 0 and t == 1) for p, t in zip(preds, trues))
+#         pred_pos = sum(preds)
+#         pred_neg = len(preds) - pred_pos
+#         true_pos = sum(trues)
+#         true_neg = len(trues) - true_pos
+#         acc = accuracy_score(trues, preds)
+#         prec = precision_score(trues, preds, zero_division=0)
+#         rec = recall_score(trues, preds, zero_division=0)
+#         f1 = f1_score(trues, preds, zero_division=0)
+#         metrics = OrderedDict([
+#             ("acc",        acc),
+#             ("precision",  prec),
+#             ("recall",     rec),
+#             ("f1",         f1),
+#             ("TP",         TP),
+#             ("TN",         TN),
+#             ("FP",         FP),
+#             ("FN",         FN),
+#             ("pred_pos",   pred_pos),
+#             ("pred_neg",   pred_neg),
+#             ("true_pos",   true_pos),
+#             ("true_neg",   true_neg),
+#         ])
+#         return metrics
+#     else:
+#         return None
+
 
 # ----------------------------- Training ----------------------------- #
 
@@ -323,18 +308,12 @@ def train(args):
 
     val_shards, train_shards = shards[: args.val_shards], shards[args.val_shards :]
 
-    import tarfile
-    for val_shard in val_shards:
-        with tarfile.open(val_shard, "r") as tar:
-            for member in tar.getmembers():
-                print(member.name)
-
     tr_ds = SuccessWindowDataset(
         train_shards, 8, 8, args.img_size, mode="train"
     )
-    # va_ds = SuccessWindowDataset(
-    #     val_shards, 8, 8, args.img_size, mode="val"
-    # )
+    va_ds = SuccessWindowDataset(
+        val_shards, 8, 8, args.img_size, mode="val"
+    )
 
     # IterableDataset 无法使用 DistributedSampler，因此直接依赖 webdataset 的 split_by_* 去重，
     # 每个 rank 仍然搭建独立 DataLoader。
@@ -348,47 +327,37 @@ def train(args):
         num_workers=args.num_workers,
         pin_memory=True,
     )
-    # va_ld = DataLoader(
-    #     va_ds,
-    #     args.val_batch_size,
-    #     # collate_fn=lambda b: (
-    #     #     torch.stack([v for v, _ in b]),
-    #     #     torch.tensor([y for _, y in b]),
-    #     # ),
-    #     num_workers=args.num_workers,
-    #     pin_memory=True,
-    # )
+    va_ld = DataLoader(
+        va_ds,
+        args.val_batch_size,
+        # collate_fn=lambda b: (
+        #     torch.stack([v for v, _ in b]),
+        #     torch.tensor([y for _, y in b]),
+        # ),
+        num_workers=args.num_workers,
+        pin_memory=True,
+    )
 
     # ---------- Model ---------- #
     cfg = VideoMAEConfig.from_pretrained("MCG-NJU/videomae-base", num_frames=8, num_labels=2)
     model = VideoMAEForVideoClassification.from_pretrained(
         "MCG-NJU/videomae-base", config=cfg
     ).to(device)
-    if args.evaluate:
-        state_dict = torch.load(args.ckpt_path, map_location="cpu")
-        model.load_state_dict(state_dict, strict=True)   # strict=False 也行，视情况而定
-
-    
 
     model = nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = FocalLoss(alpha=args.focal_alpha, gamma=args.focal_gamma)
     optim = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
     # ---------- Training Loop ---------- #
     set_seed()
     best_f1, step = 0.0, 0
 
-    if args.evaluate:
-        metrics_dict = evaluate_ddp(model, va_ld, device, rank, world_size)
-        if rank == 0:
-            print("\n[Val @ step {}]".format(step))
-            for thresh, metrics in metrics_dict.items():
-                print(f"=== Threshold: {thresh} ===")
-                for k, v in metrics.items():
-                    print(f"{k}: {v:.4f}" if isinstance(v, float) else f"{k}: {v}")
-            print()
-        return 
+    metrics = evaluate_ddp(model, va_ld, device, rank, world_size)
+    if rank == 0:
+        print("\n[Val @ step {}]".format(step))
+        print(json.dumps(metrics, indent=2, ensure_ascii=False), flush=True)
+    # assert False
 
     epoch = 0
     for epoch in range(args.epochs):
@@ -439,18 +408,18 @@ def train(args):
 
 def get_args():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pattern", default="/mnt/hdfs/zhufangqi/datasets/simplevla_rl/mimicgen/square_128_demos/**/*.tar", help="glob pattern of WebDataset shards")
+    ap.add_argument("--pattern", default="/mnt/hdfs/zhufangqi/datasets/simplevla_rl/webdataset_shards/06/17_mp/**/*.tar", help="glob pattern of WebDataset shards")
     ap.add_argument("--img_size", type=int, default=224)
     ap.add_argument("--batch_size", type=int, default=64, help="per‑GPU batch size")
-    ap.add_argument("--val_batch_size", type=int, default=512, help="per‑GPU batch size")
+    ap.add_argument("--val_batch_size", type=int, default=256, help="per‑GPU batch size")
     ap.add_argument("--num_workers", type=int, default=4)
-    ap.add_argument("--val_shards", type=int, default=0) # 200
-    ap.add_argument("--eval_steps", type=int, default=1000000000000000)
+    ap.add_argument("--val_shards", type=int, default=200)
+    ap.add_argument("--eval_steps", type=int, default=500)
+    ap.add_argument("--focal_alpha", type=float, default=0.75)
+    ap.add_argument("--focal_gamma", type=float, default=2.0)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--epochs", type=float, default=100000)
     ap.add_argument("--ckpt_dir", default="ckpts_videomae")
-    ap.add_argument("--evaluate", default=False)
-    ap.add_argument("--ckpt_path", default="/mnt/hdfs/zhufangqi/checkpoints/SimpleVLA-RL/terminal_model/neg_cross_v1_3/best_videomae.pth")
     # Distributed
     ap.add_argument("--backend", default="nccl", choices=["nccl", "gloo", "mpi"])
     ap.add_argument(
@@ -461,8 +430,9 @@ def get_args():
     )
     return ap.parse_args()
 
+
 if __name__ == "__main__":
     args = get_args()
     train(args)
 
-# torchrun --standalone --nproc_per_node=8 scripts/success_classifier_vit_v1_3.py
+# torchrun --standalone --nproc_per_node=8 scripts/success_classifier_vit_v1.2.py --pattern "/mnt/hdfs/zhufangqi/datasets/simplevla_rl/webdataset_shards/06/17_mp/**/*.tar"

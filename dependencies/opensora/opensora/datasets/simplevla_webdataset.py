@@ -209,3 +209,34 @@ class MixedSimpleVLAWebDataset(IterableDataset):
                 iterators[idx] = iter(self.datasets[idx])
                 yield next(iterators[idx])
 
+if __name__ == "__main__":
+    from tqdm import tqdm
+    shards_pattern = "/mnt/hdfs/zhufangqi/datasets/mimicgen/iclr2025/aloha/09/14/aloha_game_inference_128_9_14/**/*.tar",
+
+    stats = "/mnt/hdfs/zhufangqi/checkpoints/openvla-oft/iclr2025/aloha_09_14/openvla-7b+aloha_game+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--aloha_game_100_09_14--100000_chkpt/dataset_statistics.json"
+
+    simple_ds = SimpleVLAWebDataset(shards_pattern, stats, Ta=8, To=4, stride=1, sample_buf_size = 10, episode_buf_size = 10)
+    batch_size = 1
+    # pipeline = simple_ds.ds.with_epoch(simple_ds.epoch_size)
+    pipeline = simple_ds.ds
+    dataloader = wds.WebLoader(
+        simple_ds.ds,
+        batch_size=batch_size,
+        num_workers=4,
+        pin_memory=True,
+    )# .repeat() # .with_epoch(simple_ds.epoch_size)
+
+    all_data = []
+    count = 0
+    for batch in tqdm(dataloader): # , total=simple_ds.epoch_size // batch_size):
+        video =  ((batch['video'] + 1) / 2 * 255).to(torch.uint8)[0].permute(1,2,3,0).numpy()
+        # imageio.mimwrite(f"videos/{count}.mp4", video)
+        for frame in video:
+            equal_1 = int(np.equal(frame, torch.zeros(256,256,3)).all())
+            euqal_2 = int(np.equal(frame, 255* torch.ones(256,256,3)).all())
+            if equal_1 or euqal_2:
+                assert False
+        count+=1
+        # assert batch['video'].shape == torch.Size([batch_size, 3, 12, 256, 256])
+        # assert batch['action'].shape == torch.Size([batch_size, 8, 7])
+    print(count)

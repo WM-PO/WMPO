@@ -120,8 +120,8 @@ class SimpleVLAWebDataset(IterableDataset):
 if __name__ == "__main__":
     from tqdm import tqdm
 
-    pattern = "./datasets/simplevla_rl/webdataset_shards/06/16/*.tar"
-    stats = "./datasets/libero/dataset_statistics.json"
+    pattern = "/mnt/hdfs/zhufangqi/datasets/simplevla_rl/webdataset_shards/06/16/*.tar"
+    stats = "/mnt/hdfs/zhufangqi/datasets/libero/dataset_statistics.json"
 
     dataset = SimpleVLAWebDataset(pattern, stats, Ta=8, To=4, stride=1)
     # dataset = wds.split_by_node().with_epoch(dataset.epoch_size)

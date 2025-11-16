@@ -58,9 +58,9 @@ def convert(root, out_dir, episodes_per_shard=10):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_path", default="./datasets/libero/libero_10_no_noops",
+    parser.add_argument("--data_path", default="/mnt/hdfs/zhufangqi/datasets/libero/libero_10_no_noops",
                         help="递归遍历的 hdf5 根目录")
-    parser.add_argument("--output_dir", default="./datasets/simplevla_rl/webdataset_shards/libero/libero_10_no_noops",
+    parser.add_argument("--output_dir", default="/mnt/hdfs/zhufangqi/datasets/simplevla_rl/webdataset_shards/libero/libero_10_no_noops",
                         help="保存 .tar 的目录")
     parser.add_argument("--episodes_per_shard", type=int, default=128)
     args = parser.parse_args()

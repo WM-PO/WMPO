@@ -62,12 +62,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--video_dir", 
-        default="./debug/wm", 
+        default="/opt/tiger/simplevla-rl/debug/wm", 
         help="Directory containing .mp4 videos"
     )
     parser.add_argument(
         "--ckpt_path", 
-        default="./checkpoints/SimpleVLA-RL/terminal_model/neg_cross_v1_3/best_videomae.pth", 
+        default="/mnt/hdfs/zhufangqi/checkpoints/SimpleVLA-RL/terminal_model/neg_cross_v1_3/best_videomae.pth", 
         help="Path to trained model checkpoint (.pth)"
     )
     parser.add_argument("--threshold", type=float, default=0.93)

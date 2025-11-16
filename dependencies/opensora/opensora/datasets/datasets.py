@@ -392,7 +392,7 @@ class LiberoDataset(torch.utils.data.Dataset):
             self.q01[task_name] = np.array(self.dataset_statistics[task_name]['action']['q01'])
             self.q99[task_name] = np.array(self.dataset_statistics[task_name]['action']['q99'])
         
-        self.processor = AutoProcessor.from_pretrained("./pretrained_models/Haozhan72/Openvla-oft-SFT-libero10-traj1", trust_remote_code=True)
+        self.processor = AutoProcessor.from_pretrained("/mnt/hdfs/zhufangqi/pretrained_models/Haozhan72/Openvla-oft-SFT-libero10-traj1", trust_remote_code=True)
         self.action_tokenizer = ActionTokenizer(self.processor.tokenizer)
 
     def convert_actions_to_tokens(self, action: np.ndarray):
@@ -709,7 +709,7 @@ class RT1Dataset(torch.utils.data.Dataset):
         self.q99 = np.array(self.dataset_statistics['fractal20220817_data']['action']['q99'])
         
         tokenizer = AutoTokenizer.from_pretrained(
-            './world-model/openvla/meta-llama/Llama-2-7b-hf', model_max_length=2048, padding_side="right"
+            '/mnt/bn/zhufangqi-lq-c2ec0f30/zhufangqi/world-model/openvla/meta-llama/Llama-2-7b-hf', model_max_length=2048, token="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", padding_side="right"
         )
         tokenizer.add_special_tokens({"pad_token": "<PAD>"})
         # get dataset
@@ -1187,7 +1187,7 @@ class RealPushTDataset(Dataset):
 
 if __name__ == "__main__":
     dataset = PushTDataset(
-        data_path = "./CleanDiffuser/data/world_model",
+        data_path = "/opt/tiger/CleanDiffuser/data/world_model",
         num_frames=18
     )
     from torch.utils.data import DataLoader

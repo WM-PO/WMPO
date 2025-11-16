@@ -134,3 +134,16 @@ class RealPushTDataset(Dataset):
         # 当对象销毁时，关闭 HDF5 文件
         if hasattr(self, 'file'):
             self.file.close()
+
+
+# # 示例：如何使用该 Dataset
+if __name__ == "__main__":
+    import imageio
+    dataset = RealPushTDataset(['/opt/tiger/opensora/data/0412.h5', '/opt/tiger/opensora/data/0416_inference.h5'])
+    # dataset = RealPushTDataset(['/opt/tiger/opensora/data/0412.h5'])
+    # dataset = RealPushTDataset(['/opt/tiger/opensora/data/0416_inference.h5'])
+    for sample in dataset:
+        img = ((sample['video'][:, 0]/2 + 0.5)*255.0).astype(np.uint8).transpose(1,2,0)
+        imageio.imwrite('debug.png', img)
+        print(sample['video'].shape)
+        print(sample['action'].shape)

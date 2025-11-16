@@ -161,7 +161,7 @@ def main():
     q99 = np.array(dataset_statistics['fractal20220817_data']['action']['q99'])
     
     tokenizer = AutoTokenizer.from_pretrained(
-        './world-model/openvla/meta-llama/Llama-2-7b-hf', model_max_length=2048, token="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", padding_side="right"
+        '/mnt/bn/zhufangqi-lq-c2ec0f30/zhufangqi/world-model/openvla/meta-llama/Llama-2-7b-hf', model_max_length=2048, token="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", padding_side="right"
     )
     tokenizer.add_special_tokens({"pad_token": "<PAD>"})
     # get dataset
