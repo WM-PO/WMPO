@@ -168,7 +168,7 @@ Below shows the example paths of config files.
 
 Use `bash examples/mimicgen/{Task Name}/evaluate.sh` to evaluate the pre-trained models. Follow the default training settings to ensure reproducibility. 
 
-You can also adjust `TARGET_MODEL_PATH` to evaluate ohter checkpoints. Make sure to include the (un)normalization keys in `data_files/statistics` in the checkpoints.
+You can also adjust `TARGET_MODEL_PATH` to evaluate other checkpoints. Make sure to include the (un)normalization keys in `data_files/statistics` in the checkpoints.
 
 ### Result - WMPO outperforms DPO and GRPO
 
