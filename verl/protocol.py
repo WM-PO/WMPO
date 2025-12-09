@@ -19,12 +19,25 @@ We can subclass Protocol to define more detailed batch info with specific keys
 import numpy as np
 import copy
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Union
+from typing import Callable, Dict, List, Union, Any, Optional
 
+
+import ray
+import torch.distributed
 import torch
 import tensordict
 from tensordict import TensorDict
+from packaging import version
+from packaging.version import parse as parse_version
 from torch.utils.data import DataLoader, Dataset
+
+import contextlib
+import logging
+import math
+import os
+import pickle
+
+
 
 from verl.utils.py_functional import union_two_dict
 
@@ -86,6 +99,60 @@ def collate_fn(x: list['DataProtoItem']):
         non_tensor_batch[key] = np.array(val, dtype=object)
     return DataProto(batch=batch, non_tensor_batch=non_tensor_batch)
 
+
+def serialize_single_tensor(obj: torch.Tensor) -> tuple[str, tuple[int, ...], int | memoryview]:
+    data = obj.flatten().contiguous().view(torch.uint8).numpy()
+    dtype = str(obj.dtype).removeprefix("torch.")
+    return dtype, obj.shape, data
+
+
+def serialize_tensordict(batch: TensorDict) -> tuple[tuple[int, ...], Optional[str], dict[str, tuple[str, Any]]]:
+    encoded_items: dict[str, tuple[Any]] = {}
+    for k, v in batch.items():
+        if not v.is_nested:
+            encoded_items[k] = serialize_single_tensor(v)
+        else:
+            layout = str(v.layout).removeprefix("torch.")
+            data = [serialize_single_tensor(tensor) for tensor in v.unbind()]
+            encoded_items[k] = (layout, data)
+
+    batch_size = tuple(batch.batch_size)
+    device = str(batch.device) if batch.device is not None else None
+    return batch_size, device, encoded_items
+
+
+def deserialize_single_tensor(arr: Any) -> torch.Tensor:
+    dtype, shape, data = arr
+
+    torch_dtype = getattr(torch, dtype)
+    assert isinstance(torch_dtype, torch.dtype)
+
+    buffer = bytearray(data)
+    # Create uint8 array
+    arr = torch.frombuffer(buffer, dtype=torch.uint8)
+    # Convert back to proper shape & type
+    return arr.view(torch_dtype).view(shape)
+
+
+def deserialize_tensordict(arr: Any) -> TensorDict:
+    batch_size, device, encoded_items = arr
+    decoded_items: dict[str, Any] = {}
+
+    for k, v in encoded_items.items():
+        if len(v) == 3:
+            # decode single tensor
+            decoded_items[k] = deserialize_single_tensor(v)
+        elif len(v) == 2:
+            # decode nested tensor
+            layout, data = v
+            torch_layout = getattr(torch, layout)
+            decoded_items[k] = torch.nested.as_nested_tensor(
+                [deserialize_single_tensor(tensor) for tensor in data], layout=torch_layout
+            )
+        else:
+            raise ValueError(f"Invalid tensor encoding format, expected length 2 or 3, got {len(v)}")
+
+    return TensorDict(source=decoded_items, batch_size=batch_size, device=device)
 
 @dataclass
 class DataProtoItem:
@@ -160,21 +227,47 @@ class DataProto:
 
 
     def __getstate__(self):
-        import io
-        buffer = io.BytesIO()
-        if tensordict.__version__ >= '0.5.0' and self.batch is not None:
-            self.batch = self.batch.contiguous()
-            self.batch = self.batch.consolidate()
-        torch.save(self.batch, buffer)
-        return buffer, self.non_tensor_batch, self.meta_info
+        if version.parse(tensordict.__version__) >= version.parse("0.5.0") and self.batch is not None:
+            batch = self.batch.contiguous().consolidate()
+        else:
+            batch = self.batch
+
+        if os.getenv("VERL_DATAPROTO_SERIALIZATION_METHOD") == "numpy":
+            if batch is not None:
+                batch = serialize_tensordict(self.batch)
+
+            return (
+                batch,
+                self.non_tensor_batch,
+                self.meta_info,
+            )
+        else:
+            import io
+
+            buffer = io.BytesIO()
+            torch.save(batch, buffer)
+            buffer_bytes = buffer.getvalue()
+            return buffer_bytes, self.non_tensor_batch, self.meta_info
 
     def __setstate__(self, data):
-        batch_deserialized, non_tensor_batch, meta_info = data
-        batch_deserialized.seek(0)
-        batch = torch.load(batch_deserialized,
-                           weights_only=False,
-                           map_location='cpu' if not torch.cuda.is_available() else None)
-        self.batch = batch
+        batch_deserialized_bytes, non_tensor_batch, meta_info = data
+
+        if os.getenv("VERL_DATAPROTO_SERIALIZATION_METHOD") == "numpy":
+            if batch_deserialized_bytes is not None:
+                self.batch = deserialize_tensordict(batch_deserialized_bytes)
+            else:
+                self.batch = None
+        else:
+            import io
+
+            batch_deserialized = io.BytesIO(initial_bytes=batch_deserialized_bytes)
+            batch = torch.load(
+                batch_deserialized,
+                weights_only=False,
+                map_location="cpu" if not torch.cuda.is_available() else None,
+            )
+            self.batch = batch
+
         self.non_tensor_batch = non_tensor_batch
         self.meta_info = meta_info
 
